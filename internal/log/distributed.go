@@ -17,9 +17,10 @@ import (
 )
 
 type DistributedLog struct {
-	config Config
-	log    *Log
-	raft   *raft.Raft
+	config  Config
+	log     *Log
+	raftLog *logStore
+	raft    *raft.Raft
 }
 
 func NewDistributedLog(dataDir string, config Config) (
@@ -50,6 +51,8 @@ func (l *DistributedLog) setupLog(dataDir string) error {
 }
 
 func (l *DistributedLog) setupRaft(dataDir string) error {
+	var err error
+
 	// The FSM which runs your business logic.
 	fsm := &fsm{log: l.log}
 
@@ -61,7 +64,7 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
 	}
 	logConfig := l.config
 	logConfig.Segment.InitialOffset = 1 // Required by Raft.
-	logStore, err := newLogStore(logDir, logConfig)
+	l.raftLog, err = newLogStore(logDir, logConfig)
 	if err != nil {
 		return err
 	}
@@ -115,7 +118,7 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
 	l.raft, err = raft.NewRaft(
 		config,
 		fsm,
-		logStore,
+		l.raftLog,
 		stableStore,
 		snapshotStore,
 		transport,
@@ -128,7 +131,7 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
 	// wait until it becomes the leader, and then tell the leader to add more servers to
 	// the cluster. The subsequently added servers don’t bootstrap.
 	hasState, err := raft.HasExistingState(
-		logStore,
+		l.raftLog,
 		stableStore,
 		snapshotStore,
 	)
@@ -478,6 +481,11 @@ func (l *DistributedLog) Close() error {
 	if err := f.Error(); err != nil {
 		return err
 	}
+	// Close raft logs.
+	if err := l.raftLog.Log.Close(); err != nil {
+		return err
+	}
+	// Close user logs.
 	return l.log.Close()
 }
 

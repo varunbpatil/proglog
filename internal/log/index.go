@@ -73,7 +73,7 @@ func (i *Index) Read(off int64) (out uint32, pos uint64, err error) {
 
 func (i *Index) Write(off uint32, pos uint64) error {
 	// Check that the index file is not full.
-	if uint64(len(i.mmap)) < i.size+entryWidth {
+	if i.IsMaxed() {
 		return io.EOF
 	}
 
@@ -98,4 +98,8 @@ func (i *Index) Close() error {
 	}
 
 	return i.File.Close()
+}
+
+func (i *Index) IsMaxed() bool {
+	return uint64(len(i.mmap)) < i.size+entryWidth
 }
